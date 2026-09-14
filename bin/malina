@@ -1,0 +1,134 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# ═══════════════════════════════════════════════════════════════
+#  MALINA — Arduino Terminal for Termux
+# ═══════════════════════════════════════════════════════════════
+
+set -e
+
+# Resolve real path (even if called via symlink)
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+    DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+    SOURCE="$(readlink "$SOURCE")"
+    [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Fallback if installed in ~/.malina
+if [ ! -d "$ROOT_DIR/lib" ]; then
+    ROOT_DIR="${HOME}/.malina"
+fi
+
+# Load version
+VERSION="1.0.0"
+[ -f "$ROOT_DIR/VERSION" ] && VERSION=$(cat "$ROOT_DIR/VERSION")
+
+# Paths
+MALINA_HOME="${HOME}/.malina"
+SKETCHES_DIR="${MALINA_HOME}/sketches"
+ARDUINO_CLI="${MALINA_HOME}/bin/arduino-cli"
+CONFIG_FILE="${MALINA_HOME}/config"
+LIBRARIES_DIR="${HOME}/Arduino/libraries"
+
+# State
+CURRENT_FQBN="arduino:avr:uno"
+CURRENT_SKETCH=""
+
+# Source modules
+source "$ROOT_DIR/lib/ui.sh"
+source "$ROOT_DIR/lib/boards.sh"
+source "$ROOT_DIR/lib/sketches.sh"
+source "$ROOT_DIR/lib/compile.sh"
+source "$ROOT_DIR/lib/upload.sh"
+source "$ROOT_DIR/lib/libraries.sh"
+
+# Config helpers
+load_config() {
+    if [ -f "$CONFIG_FILE" ]; then
+        # shellcheck source=/dev/null
+        source "$CONFIG_FILE"
+    fi
+}
+
+save_config() {
+    cat > "$CONFIG_FILE" << EOF
+CURRENT_FQBN="$CURRENT_FQBN"
+CURRENT_SKETCH="$CURRENT_SKETCH"
+EOF
+}
+
+# Main menu
+main_menu() {
+    while true; do
+        print_header
+        print_status
+        echo
+        echo -e "  ${CYAN}1)${NC}  New sketch"
+        echo -e "  ${CYAN}2)${NC}  Open sketch"
+        echo -e "  ${CYAN}3)${NC}  Edit current"
+        echo -e "  ${CYAN}4)${NC}  Compile"
+        echo -e "  ${CYAN}5)${NC}  Upload"
+        echo -e "  ${CYAN}6)${NC}  Select board"
+        echo -e "  ${CYAN}7)${NC}  Install library (GitHub)"
+        echo -e "  ${CYAN}8)${NC}  List libraries"
+        echo -e "  ${CYAN}9)${NC}  Update cores"
+        echo -e "  ${CYAN}0)${NC}  Exit"
+        echo
+        echo -ne "  ${GREEN}❯${NC} "
+        read -r choice
+
+        case $choice in
+            1) new_sketch ;;
+            2) open_sketch ;;
+            3) edit_sketch ;;
+            4) compile_sketch ;;
+            5) upload_sketch ;;
+            6) select_board ;;
+            7) install_library ;;
+            8) list_libraries ;;
+            9)
+                print_header
+                echo
+                step "Updating core index..."
+                $ARDUINO_CLI core update-index > /tmp/malina_update.log 2>&1 &
+                spinner $! "Updating index..."
+                $ARDUINO_CLI core upgrade > /tmp/malina_update.log 2>&1 &
+                spinner $! "Upgrading cores..."
+                ok "Cores updated"
+                press_enter
+                ;;
+            0)
+                echo
+                typewrite "  Bye. Keep building cool things. 🍓" 0.02
+                echo
+                exit 0
+                ;;
+            *)
+                fail "Invalid option"
+                sleep 0.6
+                ;;
+        esac
+    done
+}
+
+# ── Entry ───────────────────────────────────────────────
+mkdir -p "$SKETCHES_DIR"
+mkdir -p "$LIBRARIES_DIR"
+load_config
+
+if [ ! -x "$ARDUINO_CLI" ]; then
+    echo -e "${RED}arduino-cli not found.${NC}"
+    echo -e "Run the installer first."
+    exit 1
+fi
+
+# Small startup animation
+clear
+print_logo
+echo -e "  ${DIM}Starting Malina...${NC}"
+sleep 0.4
+typewrite "  Ready." 0.03
+sleep 0.3
+
+main_menu
